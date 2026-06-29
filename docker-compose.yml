@@ -1,0 +1,167 @@
+# Spotify end-to-end pipeline
+# Start everything:  docker compose up -d
+# Stop everything:   docker compose down
+
+services:
+  # --- Kafka ---
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.1
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - spotify_network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.1
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_HEAP_OPTS: "-Xmx256M -Xms128M"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    networks:
+      - spotify_network
+
+  # --- Airflow (orchestrates dbt every 15 min) ---
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - spotify_network
+
+  airflow-init:
+    build:
+      context: .
+      dockerfile: Airflow/dockerfile
+    container_name: airflow-init
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    env_file:
+      - .env
+    command: bash -c "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true"
+    volumes:
+      - ./Airflow/Dags:/opt/airflow/dags
+      - ./DBT:/opt/airflow/dbt
+      - ./Scripts:/opt/airflow/scripts
+    networks:
+      - spotify_network
+
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: Airflow/dockerfile
+    container_name: airflow-webserver
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    env_file:
+      - .env
+    command: webserver
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./Airflow/Dags:/opt/airflow/dags
+      - ./DBT:/opt/airflow/dbt
+      - ./Scripts:/opt/airflow/scripts
+    networks:
+      - spotify_network
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: Airflow/dockerfile
+    container_name: airflow-scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    env_file:
+      - .env
+    command: scheduler
+    volumes:
+      - ./Airflow/Dags:/opt/airflow/dags
+      - ./DBT:/opt/airflow/dbt
+      - ./Scripts:/opt/airflow/scripts
+    networks:
+      - spotify_network
+
+  # --- Spotify ingestion ---
+  spotify_producer:
+    build:
+      context: .
+      dockerfile: Producer/dockerfile
+    container_name: spotify_producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    restart: unless-stopped
+    networks:
+      - spotify_network
+
+  spotify_consumer:
+    build:
+      context: .
+      dockerfile: Consumer/dockerfile
+    container_name: spotify_consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    restart: unless-stopped
+    networks:
+      - spotify_network
+
+networks:
+  spotify_network:
+    driver: bridge

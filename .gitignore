@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+DBT/target/
+DBT/logs/
+DBT/.user.yml
+DBT/profiles.yml
+
+# Power BI report file and exported personal data
+*.pbix
+Power BI/data/*.csv

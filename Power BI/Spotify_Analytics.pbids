@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "connections": [
+    {
+      "details": {
+        "protocol": "snowflake",
+        "address": {
+          "server": "QOGRAXH-UQ68486.snowflakecomputing.com",
+          "database": "spotify",
+          "warehouse": "COMPUTE_WH"
+        },
+        "authentication": null,
+        "query": null
+      },
+      "mode": "Import",
+      "options": {},
+      "name": "Spotify Snowflake"
+    }
+  ]
+}

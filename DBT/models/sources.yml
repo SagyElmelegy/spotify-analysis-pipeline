@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: raw
+    description: Raw Spotify JSON files in S3, exposed through a Snowflake external table
+    database: spotify
+    schema: raw
+    tables:
+      - name: spotify_bronze_raw
+        description: External table pointing at the bronze/ folder in S3
+        identifier: spotify_bronze_raw
