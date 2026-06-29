@@ -41,8 +41,6 @@ Artist share by play count, a distribution of how often top tracks are played, a
 5. Open Airflow: http://localhost:8080 (default: `admin` / `admin`)
 6. Refresh Power BI data: run `Power BI/refresh_data.bat`, then open the `.pbix` report locally.
 
-For Power BI setup details, see `Power BI/SETUP.md`.
-
 ## Project layout
 
 | Folder | Purpose |
